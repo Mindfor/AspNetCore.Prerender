@@ -1,0 +1,48 @@
+{
+	"version": "1.0.0-*",
+	"authors": [ "Mindfor Ltd.", "Alexander Fomin" ],
+	"description": "Prerender middleware for ASP.NET Core",
+	"tags": [ "aspnetcore", "prerender", "middleware", "phantomjs" ],
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/mindfor/aspnetcore.prerender"
+	},
+
+	"compilationOptions": {
+		"warningsAsErrors": true,
+		"nowarn": [ "CS1591" ],
+		"xmlDoc": true
+	},
+
+	"resource": [
+		"Content/**/*"
+	],
+
+	"dependencies": {
+		"Microsoft.AspNetCore.Http.Abstractions": "1.0.0-*",
+		"Microsoft.Extensions.PlatformAbstractions": "1.0.0-*",
+		"Newtonsoft.Json": "8.0.3"
+	},
+
+	"frameworks": {
+		"net451": {
+			"frameworkAssemblies": {
+				"System.Net.Http": "",
+				"System.Runtime": ""
+			}
+		},
+		"netstandard1.3": {
+			"imports": [
+				"dotnet5.4",
+				"portable-net451+win8"
+			],
+			"dependencies": {
+				"System.Diagnostics.Process": "4.1.0-*",
+				"System.IO.FileSystem": "4.0.1-*",
+				"System.Net.Http": "4.0.1-*",
+				"System.Net.NetworkInformation": "4.1.0-*",
+				"System.Text.RegularExpressions": "4.0.12-*"
+			}
+		}
+	}
+}
