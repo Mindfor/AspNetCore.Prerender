@@ -24,38 +24,34 @@ console.log("[Initialized]");
 
 // global methods
 function serverHandler(request, response) {
-	var start = new Date();
 	var url = request.url.substr(1);
-	console.log("[Prerendering:" + url + "]");
+	console.log("Prerendering: " + url);
 
-	prerender(url, null, function (error, result) {
-		var time = Date.now() - start;
-		console.log("[Prerendered:" + url + ":" + time + "ms]");
-		
-		response.setHeader("Prerender-Time", time);
-		if (error) {
-			response.statusCode = 500;
-			response.setHeader("Content-Type", "text/plain; charset=UTF-8")
-			response.write(error);
+	prerender(url, null, function (result) {
+		if (result.isSuccess) {
+			console.log("Success: " + url + ", " + result.time + "ms");
+			response.statusCode = 200;
 		}
 		else {
-			response.statusCode = 200;
-			response.setHeader("Content-Type", "text/json; charset=UTF-8")
-			response.write(JSON.stringify(result));
+			console.log("Fail: " + url + ", " + error);
+			response.statusCode = 500;
 		}
 
+		response.setHeader("Content-Type", "text/json; charset=UTF-8")
+		response.write(JSON.stringify(result));
 		response.close();
 	});
 }
 
 function prerender(url, timeout, callback) {
 	timeout = timeout || defaultTimeout;
+	var start = new Date();
 	var page = createPage();
 	var timeoutObject = null;
 
 	page.onCallback = function (data) {
 		if (data == "completed")
-			success();
+			success(true);
 	};
 	
 	page.open(url, function (status) {
@@ -65,7 +61,8 @@ function prerender(url, timeout, callback) {
 			fail();
 	});
 
-	function success() {
+	function success(isCallback) {
+		var time = Date.now() - start;
 		if (timeoutObject) {
 			clearTimeout(timeoutObject);
 			timeoutObject = null;
@@ -73,25 +70,35 @@ function prerender(url, timeout, callback) {
 
 		page.evaluate(removeScriptTags);
 		var result = {
+			isSuccess: true,
+			time: time,
+			isCallback: isCallback,
 			statusCode: page.status,
 			headers: page.headers,
 			content: page.content
 		};
 
 		page.close();
-		callback(null, result);
+		callback(result);
 	}
 
 	function fail() {
-		var error = page.reason;
+		var time = Date.now() - start;
+		var result = {
+			isSuccess: false,
+			time: time,
+			error: page.reason
+		};
+
 		page.close();
-		callback(error);
+		callback(result);
 	}
 }
 
 function createPage() {
 	var page = webpage.create();
 	page.settings.userAgent = "Mozilla/5.0 Chrome/10.0.613.0 Safari/534.15 PrerenderBot";
+	page.settings.loadImages = false;
 	page.settings.resourceTimeout = 30000;
 	page.viewportSize = { width: 1024, height: 768 };
 

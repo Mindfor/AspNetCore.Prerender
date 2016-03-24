@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.PlatformAbstractions;
@@ -80,11 +81,23 @@ namespace Mindfor.AspNetCore
 		async Task SendResultAsync(HttpContext context, PrerenderResult result)
 		{
 			var response = context.Response;
-			response.StatusCode = result.StatusCode;
-			CopyHeader(result, response, "Content-Type");
-			CopyHeader(result, response, "Location");
-			if (result.Content != null)
-				await response.WriteAsync(result.Content, context.RequestAborted);
+			response.Headers["Prerender-Time"] = result.Time.ToString();
+
+			if (result.IsSuccess)
+			{
+				response.StatusCode = result.StatusCode;
+				CopyHeader(result, response, "Content-Type");
+				CopyHeader(result, response, "Location");
+				response.Headers["Prerender-Callback"] = result.IsCallback.ToString();
+				if (result.Content != null)
+					await response.WriteAsync(result.Content, context.RequestAborted);
+			}
+			else
+			{
+				response.StatusCode = StatusCodes.Status500InternalServerError;
+				response.ContentType = "text/plain;charset=utf-8";
+				await response.WriteAsync(result.Error);
+			}
 		}
 
 		/// <summary>
