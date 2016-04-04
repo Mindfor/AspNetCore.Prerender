@@ -1,10 +1,7 @@
 ﻿using System;
-using System.IO;
 using System.Linq;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.PlatformAbstractions;
 
 namespace Mindfor.AspNetCore
 {
@@ -16,29 +13,26 @@ namespace Mindfor.AspNetCore
 	{
 		static readonly string[] PrerenderQueryKeys = new[] { "_escaped_fragment_", "prerender" };
 		readonly RequestDelegate _next;
-		PhantomJS _phantomJs;
+		readonly IPrerenderProvider _prerenderProvider;
 
 		/// <summary>
 		/// Creates new middleware instance.
 		/// </summary>
-		public PrerenderMiddleware(RequestDelegate next, IApplicationEnvironment env, string phantomJsPath)
+		public PrerenderMiddleware(RequestDelegate next, IPrerenderProvider prerenderProvider)
 		{
 			if (next == null)
 				throw new ArgumentNullException(nameof(next));
+			if (prerenderProvider == null)
+				throw new ArgumentNullException(nameof(prerenderProvider));
 			_next = next;
-
-			string path = Path.Combine(env.ApplicationBasePath, phantomJsPath);
-			_phantomJs = new PhantomJS(path);
+			_prerenderProvider = prerenderProvider;
 		}
 
 		/// <inheritdoc/>
-		public void Dispose()
+		public virtual void Dispose()
 		{
-			if (_phantomJs != null)
-			{
-				_phantomJs.Dispose();
-				_phantomJs = null;
-			}
+			if (_prerenderProvider is IDisposable)
+				((IDisposable)_prerenderProvider).Dispose();
 		}
 
 		/// <summary>
@@ -71,7 +65,7 @@ namespace Mindfor.AspNetCore
 			var query = QueryString.Create(request.Query.Where(r => !PrerenderQueryKeys.Contains(r.Key)));
 			string url = string.Concat(request.Scheme, "://", request.Host, request.Path, query);
 
-			var result = await _phantomJs.PrerenderAsync(url);
+			var result = await _prerenderProvider.PrerenderAsync(url);
 			await SendResultAsync(context, result);
 		}
 

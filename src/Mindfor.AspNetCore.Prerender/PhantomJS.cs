@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Mindfor.AspNetCore.Util;
@@ -13,31 +14,32 @@ namespace Mindfor.AspNetCore
 	/// <summary>
 	/// Starts PhantomJS in another process and provides access to the prerender function via HTTP.
 	/// </summary>
-	public class PhantomJS : IDisposable
+	public class PhantomJS : IPrerenderProvider, IDisposable
 	{
-		const string OutputInit = "[Initialized]";
-		static readonly Regex PortMessageRegex = new Regex(@"^\[Port:(?<port>\d+)\]$");
+		const string JsonMediaType = "text/json";
+		const string OutputInit = "Initialized";
+		static readonly Regex PortMessageRegex = new Regex(@"^Port:\s*(?<port>\d+)$");
 		static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
 		{
 			ContractResolver = new CamelCasePropertyNamesContractResolver()
 		};
 
-		readonly string _phantomJsPath;
+		readonly string _phantomPath;
 		readonly StringAsTempFile _script;
 		object _childProcessLauncherLock = new object();
 		bool _disposed;
 		bool _initialized;
 		Process _phantomProcess;
 		TaskCompletionSource<bool> _phantomProcessReady;
-		int _port;
+		HttpClient _phantomClient;
 
 		/// <summary>
 		/// Initializes new PhantomJS proxy.
 		/// </summary>
-		/// <param name="phantomJsPath">Path to the PhantomJS executable.</param>
-		public PhantomJS(string phantomJsPath)
+		/// <param name="phantomExecutablePath">Path to the PhantomJS executable.</param>
+		public PhantomJS(string phantomExecutablePath)
 		{
-			_phantomJsPath = phantomJsPath;
+			_phantomPath = phantomExecutablePath;
 			_script = new StringAsTempFile(EmbeddedResourceReader.Read(typeof(PhantomJS), "Content/app.js"));
 		}
 
@@ -77,17 +79,16 @@ namespace Mindfor.AspNetCore
 		/// <param name="url">URL to prerender.</param>
 		protected async Task<PrerenderResult> InvokePhantom(string url)
 		{
-			using (var client = new HttpClient())
-			{
-				var response = await client.GetAsync($"http://localhost:{_port}/{url}");
-				response.EnsureSuccessStatusCode();
+			var args = new { url };
+			var content = new StringContent(JsonConvert.SerializeObject(args), Encoding.UTF8, JsonMediaType);
+			var response = await _phantomClient.PostAsync("/", content);
+			response.EnsureSuccessStatusCode();
 
-				string responseString = await response.Content.ReadAsStringAsync();
-				bool responseIsJson = response.Content.Headers.ContentType.MediaType == "text/json";
-				if (!responseIsJson)
-					throw new ArgumentException($"PhantomJS responded with non-JSON string. This cannot be converted to the type: {typeof(PrerenderResult).FullName}");
-				return JsonConvert.DeserializeObject<PrerenderResult>(responseString);
-			}
+			string responseString = await response.Content.ReadAsStringAsync();
+			bool responseIsJson = response.Content.Headers.ContentType.MediaType == JsonMediaType;
+			if (!responseIsJson)
+				throw new ArgumentException($"PhantomJS responded with non-JSON string. This cannot be converted to the type: {typeof(PrerenderResult).FullName}");
+			return JsonConvert.DeserializeObject<PrerenderResult>(responseString);
 		}
 
 		/// <summary>
@@ -101,7 +102,7 @@ namespace Mindfor.AspNetCore
 			// start process
 			var startInfo = new ProcessStartInfo()
 			{
-				FileName = _phantomJsPath,
+				FileName = _phantomPath,
 				Arguments = $"\"{_script.FileName}\" {GetAvailableNetworkPort()}",
 				UseShellExecute = false,
 				RedirectStandardInput = true,
@@ -133,8 +134,14 @@ namespace Mindfor.AspNetCore
 
 				// port message
 				var match = PortMessageRegex.Match(e.Data);
-				if (match.Success && _port == 0)
-					_port = int.Parse(match.Groups["port"].Value);
+				if (match.Success && _phantomClient == null)
+				{
+					int port = int.Parse(match.Groups["port"].Value);
+					_phantomClient = new HttpClient
+					{
+						BaseAddress = new Uri($"http://localhost:{port}")
+					};
+				}
 			}
 		}
 
@@ -200,6 +207,8 @@ namespace Mindfor.AspNetCore
 			{
 				if (disposing)
 					_script.Dispose();
+				if (_phantomClient != null)
+					_phantomClient.Dispose();
 				if (_phantomProcess != null && !_phantomProcess.HasExited)
 					_phantomProcess.Kill();
 
